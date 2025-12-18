@@ -6,13 +6,45 @@ from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs
 import os
+from datetime import datetime
 
 PROVIDER_URL = os.environ.get("PROVIDER_URL")
+KEYS_FILE = "keys.txt"
+
+def is_key_valid(api_key):
+    try:
+        with open(KEYS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or ":" not in line:
+                    continue
+
+                key, expiry = line.split(":", 1)
+                if key == api_key:
+                    expiry_date = datetime.strptime(expiry, "%d/%m/%Y")
+                    return datetime.utcnow() <= expiry_date
+    except Exception:
+        pass
+
+    return False
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         query = parse_qs(urlparse(self.path).query)
+
+        api_key = query.get("key", [None])[0]
         url = query.get("url", [None])[0]
+
+        # 🔐 KEY CHECK FIRST
+        if not api_key or not is_key_valid(api_key):
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": "Invalid or expired API key"
+            }).encode())
+            return
 
         if not url:
             self.send_response(400)
