@@ -56,21 +56,30 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(401)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "message": "Invalid or expired API key"}).encode())
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": "Invalid or expired API key"
+            }).encode())
             return
 
         if not username:
             self.send_response(400)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "message": "username is required"}).encode())
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": "username is required"
+            }).encode())
             return
 
         if not INSTAGRAM_API_URL:
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "message": "Provider not configured"}).encode())
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": "Api not configured"
+            }).encode())
             return
 
         headers = {
@@ -117,8 +126,11 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode())
 
-        except Exception as e:
+        except Exception:
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": "failed to send request to UseSir API"
+            }).encode())
