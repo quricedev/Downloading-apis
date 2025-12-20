@@ -97,6 +97,25 @@ class handler(BaseHTTPRequestHandler):
 
             profile = res_json.get("data", {}).get("data", {})
 
+            followers = (
+                profile.get("followers_count")
+                or profile.get("follower_count")
+                or profile.get("followers")
+                or (profile.get("edge_followed_by") or {}).get("count")
+            )
+
+            following = (
+                profile.get("following_count")
+                or profile.get("following")
+                or (profile.get("edge_follow") or {}).get("count")
+            )
+
+            posts = (
+                profile.get("media_count")
+                or profile.get("posts")
+                or profile.get("post_count")
+            )
+
             response = {
                 "provider_by": "UseSir",
                 "data": {
@@ -105,9 +124,9 @@ class handler(BaseHTTPRequestHandler):
                     "full_name": profile.get("full_name"),
                     "bio": profile.get("biography"),
                     "external_url": profile.get("external_url"),
-                    "followers": profile.get("followers_count"),
-                    "following": profile.get("following_count"),
-                    "posts": profile.get("media_count"),
+                    "followers": followers,
+                    "following": following,
+                    "posts": posts,
                     "profile_image_hd": profile.get("profile_pic_url_original"),
                     "is_private": bool(profile.get("is_private")),
                     "is_verified": bool(profile.get("is_verified")),
