@@ -4,12 +4,9 @@ import requests
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
-from dotenv import load_dotenv
-
-load_dotenv()
 
 INSTAGRAM_API_URL = os.environ.get("INSTAGRAM_API_URL")
-KEYS_FILE = "iginfokey.txt"
+KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "iginfokey.txt")
 
 def is_key_valid(api_key):
     try:
@@ -93,10 +90,12 @@ class handler(BaseHTTPRequestHandler):
         try:
             r = requests.post(INSTAGRAM_API_URL, headers=headers, data={"profile": username}, timeout=20)
             r.raise_for_status()
-            res_json = r.json()
-            profile = res_json.get("data", {}).get("data", {})
+            try:
+                res_json = r.json()
+            except:
+                raise Exception()
 
-            account_year = detect_year(profile.get("id"))
+            profile = res_json.get("data", {}).get("data", {})
 
             response = {
                 "provider_by": "UseSir",
@@ -115,7 +114,7 @@ class handler(BaseHTTPRequestHandler):
                     "is_business_account": bool(profile.get("is_business")),
                     "is_professional_account": bool(profile.get("is_professional_account")),
                     "fbid": profile.get("fbid"),
-                    "account_created_year": account_year,
+                    "account_created_year": detect_year(profile.get("id")),
                     "date": datetime.utcnow().strftime("%Y-%m-%d")
                 },
                 "owner": "@UseSir / @OverShade"
@@ -126,7 +125,7 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode())
 
-        except Exception:
+        except:
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
