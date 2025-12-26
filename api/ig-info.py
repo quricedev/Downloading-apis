@@ -80,10 +80,17 @@ class handler(BaseHTTPRequestHandler):
             return
 
         headers = {
+            "authority": "tools.xrespond.com",
             "accept": "*/*",
             "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
             "origin": "https://bitchipdigital.com",
             "referer": "https://bitchipdigital.com/",
+            "sec-ch-ua": '"Chromium";v="137", "Not/A)Brand";v="24"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "cross-site",
             "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
         }
 
