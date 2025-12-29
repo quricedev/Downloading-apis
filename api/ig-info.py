@@ -135,7 +135,7 @@ class handler(BaseHTTPRequestHandler):
                     "followers": followers,
                     "following": following,
                     "posts": posts,
-                    "profile_image_hd": profile.get("profile_pic_url_original"),
+                    "profile_image_hd": profile.get("profile_pic_url_hd") or profile.get("profile_pic_url_original") or profile.get("profile_pic_url"),
                     "is_private": bool(profile.get("is_private")),
                     "is_verified": bool(profile.get("is_verified")),
                     "is_business_account": bool(profile.get("is_business")),
