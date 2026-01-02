@@ -12,6 +12,7 @@ PROVIDER_COOKIE = os.environ.get("TERABOX_COOKIE")
 
 KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "terakeys.txt")
 
+
 def is_key_valid(api_key):
     try:
         with open(KEYS_FILE, "r") as f:
@@ -25,6 +26,7 @@ def is_key_valid(api_key):
     except:
         pass
     return False
+
 
 class handler(BaseHTTPRequestHandler):
 
@@ -45,7 +47,7 @@ class handler(BaseHTTPRequestHandler):
                 "message": "Missing 'url' parameter"
             })
 
-        if not PROVIDER_URL or not PROVIDER_ORIGIN or not PROVIDER_REFERER or not PROVIDER_COOKIE:
+        if not all([PROVIDER_URL, PROVIDER_ORIGIN, PROVIDER_REFERER, PROVIDER_COOKIE]):
             return self.respond(500, {
                 "status": "error",
                 "message": "Api not configured"
@@ -54,7 +56,6 @@ class handler(BaseHTTPRequestHandler):
         try:
             headers = {
                 "accept": "*/*",
-                "accept-encoding": "gzip, deflate, br, zstd",
                 "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
                 "origin": PROVIDER_ORIGIN,
                 "referer": PROVIDER_REFERER,
@@ -63,23 +64,9 @@ class handler(BaseHTTPRequestHandler):
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/143.0.0.0 Safari/537.36"
                 ),
-                "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
-                "sec-ch-ua-arch": "\"x86\"",
-                "sec-ch-ua-bitness": "\"64\"",
-                "sec-ch-ua-full-version": "\"143.0.7499.170\"",
-                "sec-ch-ua-full-version-list": (
-                    "\"Google Chrome\";v=\"143.0.7499.170\", "
-                    "\"Chromium\";v=\"143.0.7499.170\", "
-                    "\"Not A(Brand\";v=\"24.0.0.0\""
-                ),
-                "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-model": "\"\"",
-                "sec-ch-ua-platform": "\"Windows\"",
-                "sec-ch-ua-platform-version": "\"10.0.0\"",
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
                 "sec-fetch-site": "same-origin",
-                "priority": "u=1, i",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-dest": "empty",
                 "cookie": PROVIDER_COOKIE
             }
 
@@ -94,18 +81,26 @@ class handler(BaseHTTPRequestHandler):
                 timeout=30
             )
 
-            r.raise_for_status()
-            data = r.json()
+            if r.status_code != 200:
+                raise Exception("provider_http_error")
 
-            self.respond(200, {
+            try:
+                data = r.json()
+            except:
+                raise Exception("invalid_json")
+
+            if not data or isinstance(data, dict) and data.get("status") in ["error", "fail"]:
+                raise Exception("provider_rejected")
+
+            return self.respond(200, {
                 "status": "success",
                 "data": data,
                 "provider": "UseSir",
                 "owner": "@UseSir / @OverShade"
             })
 
-        except:
-            self.respond(500, {
+        except Exception as e:
+            return self.respond(500, {
                 "status": "error",
                 "message": "failed to fetch terabox data"
             })
@@ -114,4 +109,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(payload, ensure_ascii=False, indent=2).encode())
+        self.wfile.write(
+            json.dumps(payload, ensure_ascii=False).encode()
+                    )
