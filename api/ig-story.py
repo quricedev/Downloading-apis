@@ -1,3 +1,4 @@
+
 import os
 import json
 import requests
@@ -11,6 +12,12 @@ PROVIDER_URL = os.environ.get("IG_STORY_PROVIDER")
 MEDIA_BASE = os.environ.get("IG_STORY_MEDIA_BASE")
 
 KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "igstorykey.txt")
+
+QUALITY_PRIORITY = {
+    "1080p": 2,
+    "720p": 1
+}
+
 
 def is_key_valid(api_key):
     try:
@@ -26,13 +33,33 @@ def is_key_valid(api_key):
         pass
     return False
 
+
 def encode_proxy_url(url):
     return base64.urlsafe_b64encode(url.encode()).decode()
+
 
 def decode_proxy_url(token):
     return base64.urlsafe_b64decode(token.encode()).decode()
 
+
+def detect_quality(url: str):
+    u = url.lower()
+    if "1080" in u:
+        return "1080p"
+    return "720p"
+
+
+def extract_story_id(url: str):
+    """
+    Extract a stable identifier so multiple qualities
+    of the same story are grouped together.
+    """
+    m = re.search(r"/([A-Za-z0-9_-]{15,})", url)
+    return m.group(1) if m else url.split("?")[0]
+
+
 class handler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
@@ -47,28 +74,25 @@ class handler(BaseHTTPRequestHandler):
         username = query.get("username", [None])[0]
 
         if not api_key or not is_key_valid(api_key):
-            self.send_json(401, {
+            return self.send_json(401, {
                 "status": "error",
                 "message": "Invalid or expired API key"
             })
-            return
 
         if not username:
-            self.send_json(400, {
+            return self.send_json(400, {
                 "status": "error",
                 "message": "username is required"
             })
-            return
 
         if not PROVIDER_URL or not MEDIA_BASE:
-            self.send_json(500, {
+            return self.send_json(500, {
                 "status": "error",
                 "message": "Api not configured"
             })
-            return
 
         headers = {
-            "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
+            "user-agent": "Mozilla/5.0",
             "accept": "*/*"
         }
 
@@ -79,41 +103,58 @@ class handler(BaseHTTPRequestHandler):
                 timeout=20
             )
             r.raise_for_status()
-            data = r.json()
 
+            data = r.json()
             html = data.get("html", "")
 
-            paths = re.findall(
+            raw_paths = re.findall(
                 r'/media\.php\?media=[^"\']+\.mp4[^"\']*',
                 html
             )
 
-            paths = list(dict.fromkeys(paths))
+            grouped = {}
+
+            for path in raw_paths:
+                full_media_url = f"{MEDIA_BASE}{path}"
+                quality = detect_quality(full_media_url)
+                priority = QUALITY_PRIORITY[quality]
+                story_id = extract_story_id(full_media_url)
+
+                existing = grouped.get(story_id)
+                if not existing or priority > existing["priority"]:
+                    grouped[story_id] = {
+                        "url": full_media_url,
+                        "quality": quality,
+                        "priority": priority
+                    }
+
+            if not grouped:
+                return self.send_json(404, {
+                    "status": "error",
+                    "message": "No stories found"
+                })
 
             host = self.headers.get("host")
             base_url = f"https://{host}"
 
             stories = []
-            for i, path in enumerate(paths, start=1):
-                full_media_url = f"{MEDIA_BASE}{path}"
-                token = encode_proxy_url(full_media_url)
-
+            for idx, item in enumerate(grouped.values(), start=1):
+                token = encode_proxy_url(item["url"])
                 stories.append({
-                    "index": i,
+                    "index": idx,
                     "type": "video",
+                    "quality": item["quality"],
                     "download_url": f"{base_url}/api/ig-story?link={token}"
                 })
 
-            response = {
+            self.send_json(200, {
                 "status": "success",
                 "username": username,
                 "total_stories": len(stories),
                 "stories": stories,
                 "provider": "UseSir",
                 "owner": "@UseSir / @OverShade"
-            }
-
-            self.send_json(200, response)
+            })
 
         except:
             self.send_json(500, {
@@ -123,12 +164,6 @@ class handler(BaseHTTPRequestHandler):
 
     def handle_proxy(self, query):
         token = query.get("link", [None])[0]
-
-        if not token:
-            self.send_response(400)
-            self.end_headers()
-            return
-
         try:
             target = decode_proxy_url(token)
             r = requests.get(target, stream=True, timeout=20)
