@@ -14,7 +14,6 @@ MAIN_API_ORIGIN = os.environ.get("MAIN_API_ORIGIN")
 
 KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "igpostkey.txt")
 
-
 def is_key_valid(api_key):
     try:
         with open(KEYS_FILE, "r") as f:
@@ -29,14 +28,11 @@ def is_key_valid(api_key):
         pass
     return False
 
-
 def encode_url(url):
     return base64.urlsafe_b64encode(url.encode()).decode()
 
-
 def decode_url(token):
     return base64.urlsafe_b64decode(token.encode()).decode()
-
 
 class handler(BaseHTTPRequestHandler):
 
@@ -76,40 +72,33 @@ class handler(BaseHTTPRequestHandler):
             r.raise_for_status()
 
             soup = BeautifulSoup(r.text, "html.parser")
+            media_links = set()
 
-            download_links = []
-            seen = set()
-            for a in soup.select("a.btn, a[href]"):
-                href = a.get("href", "")
-                href = html.unescape(href)
+            for video in soup.find_all("video"):
+                poster = video.get("poster")
+                if poster:
+                    media_links.add(html.unescape(poster))
+                for src in video.find_all("source"):
+                    if src.get("src"):
+                        media_links.add(html.unescape(src["src"]))
 
-                if not href:
-                    continue
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src")
+                if src and any(x in src.lower() for x in ["cdninstagram", "scontent"]):
+                    media_links.add(html.unescape(src))
 
-                if any(x in href for x in [
-                    "profile_pic",
-                    "avatar",
-                    "favicon"
-                ]):
-                    continue
+            media_links = [
+                m for m in media_links
+                if not any(x in m.lower() for x in ["profile", "avatar", "logo"])
+            ]
 
-                if (
-                    ".mp4" in href
-                    or ".jpg" in href
-                    or ".jpeg" in href
-                    or ".png" in href
-                ):
-                    if href not in seen:
-                        seen.add(href)
-                        download_links.append(href)
-
-            if not download_links:
-                return self.send_json(404, "Post media not found or post is private")
+            if not media_links:
+                return self.send_json(404, "Media not found or post is private")
 
             host = self.headers.get("host")
             results = []
 
-            for i, media in enumerate(download_links, start=1):
+            for i, media in enumerate(media_links, start=1):
                 token = encode_url(media)
                 results.append({
                     "index": i,
@@ -128,12 +117,11 @@ class handler(BaseHTTPRequestHandler):
                 "owner": "@UseSir / @OverShade"
             }, indent=2).encode())
 
-        except Exception as e:
+        except:
             self.send_json(500, "failed to fetch instagram post")
 
     def proxy_media(self, query):
         token = query.get("link", [None])[0]
-
         try:
             target = decode_url(token)
             r = requests.get(target, stream=True, timeout=20)
@@ -149,7 +137,6 @@ class handler(BaseHTTPRequestHandler):
             for chunk in r.iter_content(8192):
                 if chunk:
                     self.wfile.write(chunk)
-
         except:
             self.send_response(500)
             self.end_headers()
