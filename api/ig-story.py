@@ -1,4 +1,3 @@
-
 import os
 import json
 import requests
@@ -24,7 +23,7 @@ def is_key_valid(api_key):
         with open(KEYS_FILE, "r") as f:
             for line in f:
                 line = line.strip()
-                if not line or ":" not in line:
+                if ":" not in line:
                     continue
                 key, expiry = line.split(":", 1)
                 if key == api_key:
@@ -42,16 +41,11 @@ def decode_proxy_url(token):
     return base64.urlsafe_b64decode(token.encode()).decode()
 
 
-def detect_quality(url: str):
+def detect_quality(url):
     u = url.lower()
-    if "1080" in u:
+    if any(x in u for x in ["1080", "hd", "fhd"]):
         return "1080p"
     return "720p"
-
-
-def extract_story_id(url: str):
-    m = re.search(r"/([A-Za-z0-9_-]{15,})", url)
-    return m.group(1) if m else url.split("?")[0]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -70,22 +64,13 @@ class handler(BaseHTTPRequestHandler):
         username = query.get("username", [None])[0]
 
         if not api_key or not is_key_valid(api_key):
-            return self.send_json(401, {
-                "status": "error",
-                "message": "Invalid or expired API key"
-            })
+            return self.send_json(401, "Invalid or expired API key")
 
         if not username:
-            return self.send_json(400, {
-                "status": "error",
-                "message": "username is required"
-            })
+            return self.send_json(400, "username is required")
 
         if not PROVIDER_URL or not MEDIA_BASE:
-            return self.send_json(500, {
-                "status": "error",
-                "message": "Api not configured"
-            })
+            return self.send_json(500, "Api not configured")
 
         headers = {
             "user-agent": "Mozilla/5.0",
@@ -100,47 +85,74 @@ class handler(BaseHTTPRequestHandler):
             )
             r.raise_for_status()
 
-            data = r.json()
-            html = data.get("html", "")
+            html = r.json().get("html", "")
 
-            raw_paths = re.findall(
-                r'/media\.php\?media=[^"\']+\.mp4[^"\']*',
-                html
+            # -------- Extract timestamps (order matters) --------
+            timestamps = re.findall(
+                r'<small>.*?<i class="far fa-clock".*?>.*?</i>\s*(.*?)</small>',
+                html,
+                re.DOTALL
             )
 
-            grouped = {}
+            # -------- Extract video stories --------
+            video_blocks = re.findall(
+                r'<video[^>]+poster="([^"]+)"[^>]*>.*?<source src="([^"]+\.mp4[^"]*)"',
+                html,
+                re.DOTALL
+            )
 
-            for path in raw_paths:
-                full_media_url = f"{MEDIA_BASE}{path}"
-                quality = detect_quality(full_media_url)
+            stories_map = {}
+
+            for idx, (poster, video_path) in enumerate(video_blocks):
+                full_url = f"{MEDIA_BASE}{video_path}"
+                quality = detect_quality(full_url)
                 priority = QUALITY_PRIORITY[quality]
-                story_id = extract_story_id(full_media_url)
+                ts = timestamps[idx] if idx < len(timestamps) else None
 
-                existing = grouped.get(story_id)
+                existing = stories_map.get(poster)
                 if not existing or priority > existing["priority"]:
-                    grouped[story_id] = {
-                        "url": full_media_url,
+                    stories_map[poster] = {
+                        "type": "video",
+                        "url": full_url,
                         "quality": quality,
-                        "priority": priority
+                        "priority": priority,
+                        "timestamp": ts
                     }
 
-            if not grouped:
-                return self.send_json(404, {
-                    "status": "error",
-                    "message": "No stories found"
-                })
+            # -------- Extract image stories --------
+            image_blocks = re.findall(
+                r'<img[^>]+src="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"',
+                html,
+                re.IGNORECASE
+            )
+
+            for idx, img in enumerate(image_blocks):
+                img_url = f"{MEDIA_BASE}{img}" if img.startswith("/media.php") else img
+                ts = timestamps[len(stories_map) + idx] if len(stories_map) + idx < len(timestamps) else None
+
+                stories_map[img_url] = {
+                    "type": "image",
+                    "url": img_url,
+                    "quality": "original",
+                    "priority": 1,
+                    "timestamp": ts
+                }
+
+            if not stories_map:
+                return self.send_json(404, "No stories found")
 
             host = self.headers.get("host")
-            base_url = f"https://{host}"
+            base = f"https://{host}"
 
             stories = []
-            for idx, item in enumerate(grouped.values(), start=1):
+            for i, item in enumerate(stories_map.values(), start=1):
                 token = encode_proxy_url(item["url"])
                 stories.append({
-                    "index": idx,
-                    "type": "video",
+                    "index": i,
+                    "type": item["type"],
                     "quality": item["quality"],
-                    "download_url": f"{base_url}/api/ig-story?link={token}"
+                    "Posted": item["timestamp"],
+                    "download_url": f"{base}/api/ig-story?link={token}"
                 })
 
             self.send_json(200, {
@@ -152,11 +164,8 @@ class handler(BaseHTTPRequestHandler):
                 "owner": "@UseSir / @OverShade"
             })
 
-        except:
-            self.send_json(500, {
-                "status": "error",
-                "message": "failed to fetch stories"
-            })
+        except Exception:
+            self.send_json(500, "failed to fetch stories")
 
     def handle_proxy(self, query):
         token = query.get("link", [None])[0]
@@ -180,8 +189,11 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
 
-    def send_json(self, code, payload):
+    def send_json(self, code, message):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(payload, indent=2).encode())
+        self.wfile.write(json.dumps({
+            "status": "error" if code != 200 else "success",
+            "message": message
+        }, indent=2).encode())
