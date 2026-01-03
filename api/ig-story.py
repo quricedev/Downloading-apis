@@ -87,14 +87,14 @@ class handler(BaseHTTPRequestHandler):
 
             html = r.json().get("html", "")
 
-            # -------- Extract timestamps (order matters) --------
+            
             timestamps = re.findall(
                 r'<small>.*?<i class="far fa-clock".*?>.*?</i>\s*(.*?)</small>',
                 html,
                 re.DOTALL
             )
 
-            # -------- Extract video stories --------
+            
             video_blocks = re.findall(
                 r'<video[^>]+poster="([^"]+)"[^>]*>.*?<source src="([^"]+\.mp4[^"]*)"',
                 html,
@@ -119,7 +119,7 @@ class handler(BaseHTTPRequestHandler):
                         "timestamp": ts
                     }
 
-            # -------- Extract image stories --------
+            
             image_blocks = re.findall(
                 r'<img[^>]+src="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"',
                 html,
