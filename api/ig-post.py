@@ -77,40 +77,43 @@ class handler(BaseHTTPRequestHandler):
 
             soup = BeautifulSoup(r.text, "html.parser")
 
-            media_links = []
+            download_links = []
             seen = set()
+            for a in soup.select("a.btn, a[href]"):
+                href = a.get("href", "")
+                href = html.unescape(href)
 
-            for a in soup.find_all("a", href=True):
-                href = html.unescape(a["href"])
+                if not href:
+                    continue
 
-                # ✅ FILTER OUT PROFILE PICTURES
                 if any(x in href for x in [
                     "profile_pic",
-                    "profile_pic_url",
-                    "t51.2885-19"
+                    "avatar",
+                    "favicon"
                 ]):
                     continue
 
-                # ✅ ACCEPT ONLY REAL POST MEDIA
                 if (
-                    ("scontent.cdninstagram.com" in href)
-                    and (href.endswith(".mp4") or href.endswith(".jpg") or href.endswith(".jpeg") or href.endswith(".png"))
+                    ".mp4" in href
+                    or ".jpg" in href
+                    or ".jpeg" in href
+                    or ".png" in href
                 ):
                     if href not in seen:
                         seen.add(href)
-                        media_links.append(href)
+                        download_links.append(href)
 
-            if not media_links:
+            if not download_links:
                 return self.send_json(404, "Post media not found or post is private")
 
             host = self.headers.get("host")
             results = []
 
-            for i, media in enumerate(media_links, start=1):
+            for i, media in enumerate(download_links, start=1):
                 token = encode_url(media)
                 results.append({
                     "index": i,
-                    "type": "video" if media.endswith(".mp4") else "image",
+                    "type": "video" if ".mp4" in media else "image",
                     "download_url": f"https://{host}/api/ig-post?link={token}"
                 })
 
@@ -125,7 +128,7 @@ class handler(BaseHTTPRequestHandler):
                 "owner": "@UseSir / @OverShade"
             }, indent=2).encode())
 
-        except:
+        except Exception as e:
             self.send_json(500, "failed to fetch instagram post")
 
     def proxy_media(self, query):
