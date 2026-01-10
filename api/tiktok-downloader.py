@@ -63,41 +63,44 @@ class handler(BaseHTTPRequestHandler):
                 "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
             }
 
-            payload = {
-                "url": video_url
-            }
-
             r = requests.post(
                 PROVIDER_URL,
                 headers=headers,
-                json=payload,
+                json={"url": video_url},
                 timeout=30
             )
 
             r.raise_for_status()
             data = r.json()
 
-            download = (
-                data.get("video")
-                or data.get("download")
-                or data.get("url")
-            )
-
-            if not download:
+            media_url = data.get("mediaUrl")
+            if not media_url:
                 return self.send_json(404, "Video not found")
 
+            token = encode_url(media_url)
             host = self.headers.get("host")
-            token = encode_url(download)
 
-            self.send_json(200, {
+            response = {
                 "status": "success",
+                "type": data.get("type"),
+                "id": data.get("id"),
+                "url": data.get("url"),
+                "caption": data.get("caption"),
+                "thumbnail": data.get("thumbnail"),
                 "download_url": f"https://{host}/api/tiktok-download?link={token}",
                 "quality": "highest",
+                "stats": data.get("stats"),
+                "video_meta": data.get("videoMeta"),
+                "author": data.get("authorInfo"),
+                "music": data.get("musicInfo"),
+                "is_ad": data.get("isAd"),
                 "provider": "UseSir",
                 "owner": "@UseSir / @OverShade"
-            })
+            }
 
-        except:
+            self.send_json(200, response)
+
+        except Exception:
             self.send_json(500, "failed to fetch tiktok video")
 
     def proxy_video(self, query):
