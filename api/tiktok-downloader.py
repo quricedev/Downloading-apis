@@ -18,7 +18,7 @@ def is_key_valid(api_key):
             for line in f:
                 if ":" not in line:
                     continue
-                key, expiry = line.strip.split(":", 1)
+                key, expiry = line.strip().split(":", 1)
                 if key == api_key:
                     return datetime.utcnow() <= datetime.strptime(expiry, "%d/%m/%Y")
     except:
