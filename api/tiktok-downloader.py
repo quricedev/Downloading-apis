@@ -7,8 +7,6 @@ from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 
 PROVIDER_URL = os.environ.get("TIKTOK_PROVIDER")
-PROVIDER_ORIGIN = os.environ.get("TIKTOK_ORIGIN")
-PROVIDER_REFERER = os.environ.get("TIKTOK_REFERER")
 
 KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "tiktokkeys.txt")
 
@@ -36,11 +34,10 @@ def decode_url(token):
     return base64.urlsafe_b64decode(token.encode()).decode()
 
 
-def proxy_link(url, host, path):
+def proxy(url, host, path):
     if not url:
         return None
-    token = encode_url(url)
-    return f"https://{host}{path}?link={token}"
+    return f"https://{host}{path}?link={encode_url(url)}"
 
 
 class handler(BaseHTTPRequestHandler):
@@ -49,9 +46,9 @@ class handler(BaseHTTPRequestHandler):
         query = parse_qs(urlparse(self.path).query)
 
         if query.get("link"):
-            self.proxy_media(query)
-        else:
-            self.fetch_video(query)
+            return self.proxy_media(query)
+
+        self.fetch_video(query)
 
     def fetch_video(self, query):
         api_key = query.get("key", [None])[0]
@@ -63,20 +60,14 @@ class handler(BaseHTTPRequestHandler):
         if not video_url:
             return self.send_json(400, "Missing 'url' parameter")
 
-        if not PROVIDER_URL or not PROVIDER_ORIGIN or not PROVIDER_REFERER:
+        if not PROVIDER_URL:
             return self.send_json(500, "Api not configured")
 
         try:
             headers = {
                 "accept": "*/*",
                 "content-type": "application/json",
-                "origin": PROVIDER_ORIGIN,
-                "referer": PROVIDER_REFERER,
-                "user-agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/143.0.0.0 Safari/537.36"
-                )
+                "user-agent": "Mozilla/5.0"
             }
 
             payload = {"url": video_url}
@@ -91,9 +82,8 @@ class handler(BaseHTTPRequestHandler):
             r.raise_for_status()
             data = r.json()
 
-            media_url = data.get("mediaUrl") or data.get("video")
-
-            if not media_url:
+            media = data.get("mediaUrl")
+            if not media:
                 return self.send_json(404, "Video not found")
 
             host = self.headers.get("host")
@@ -101,26 +91,20 @@ class handler(BaseHTTPRequestHandler):
 
             response = {
                 "status": "success",
-                "type": data.get("type"),
                 "id": data.get("id"),
-                "caption": data.get("caption"),
                 "username": data.get("username"),
+                "caption": data.get("caption"),
                 "stats": data.get("stats"),
                 "video": {
-                    "download_url": proxy_link(media_url, host, path),
+                    "download_url": proxy(media, host, path),
                     "quality": "highest"
                 },
-                "thumbnail": proxy_link(data.get("thumbnail"), host, path),
-                "cover": proxy_link(
-                    data.get("musicInfo", {}).get("cover"),
-                    host,
-                    path
-                ),
+                "thumbnail": proxy(data.get("thumbnail"), host, path),
                 "author": {
                     "id": data.get("authorInfo", {}).get("id"),
                     "username": data.get("authorInfo", {}).get("username"),
                     "nickname": data.get("authorInfo", {}).get("nickname"),
-                    "avatar": proxy_link(
+                    "avatar": proxy(
                         data.get("authorInfo", {}).get("avatar"),
                         host,
                         path
@@ -131,7 +115,7 @@ class handler(BaseHTTPRequestHandler):
                     "title": data.get("musicInfo", {}).get("title"),
                     "author": data.get("musicInfo", {}).get("author"),
                     "duration": data.get("musicInfo", {}).get("duration"),
-                    "cover": proxy_link(
+                    "cover": proxy(
                         data.get("musicInfo", {}).get("cover"),
                         host,
                         path
@@ -143,21 +127,19 @@ class handler(BaseHTTPRequestHandler):
 
             self.send_json(200, response)
 
-        except:
+        except Exception:
             self.send_json(500, "failed to fetch tiktok video")
 
     def proxy_media(self, query):
-        token = query.get("link", [None])[0]
-
         try:
-            target = decode_url(token)
+            target = decode_url(query.get("link")[0])
             r = requests.get(target, stream=True, timeout=30)
             r.raise_for_status()
 
             self.send_response(200)
             self.send_header(
                 "Content-Type",
-                r.headers.get("Content-Type", "application/octet-stream")
+                r.headers.get("Content-Type", "video/mp4")
             )
             self.send_header("Content-Disposition", "inline")
             self.end_headers()
@@ -176,9 +158,6 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         if isinstance(payload, str):
-            payload = {
-                "status": "error",
-                "message": payload
-            }
+            payload = {"status": "error", "message": payload}
 
         self.wfile.write(json.dumps(payload, indent=2).encode())
