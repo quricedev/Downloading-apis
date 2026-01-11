@@ -1,7 +1,7 @@
 import os
 import json
 import base64
-import requests
+import cloudscraper
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
@@ -80,13 +80,25 @@ class handler(BaseHTTPRequestHandler):
             })
 
         try:
-            r = requests.post(
+            scraper = cloudscraper.create_scraper(
+                browser={
+                    "browser": "chrome",
+                    "platform": "windows",
+                    "desktop": True
+                }
+            )
+
+            r = scraper.post(
                 PROVIDER_URL,
                 json={"url": url},
                 headers={
                     "accept": "application/json",
                     "content-type": "application/json",
-                    "user-agent": "Mozilla/5.0"
+                    "user-agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/143.0.0.0 Safari/537.36"
+                    )
                 },
                 timeout=30
             )
@@ -140,7 +152,9 @@ class handler(BaseHTTPRequestHandler):
     def proxy_media(self, query):
         try:
             target = decode_url(query.get("link")[0])
-            r = requests.get(target, stream=True, timeout=30)
+
+            scraper = cloudscraper.create_scraper()
+            r = scraper.get(target, stream=True, timeout=30)
             r.raise_for_status()
 
             self.send_response(200)
