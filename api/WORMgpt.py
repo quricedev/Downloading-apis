@@ -11,7 +11,7 @@ MODEL_NAME = os.environ.get("OPENROUTER_MODEL")
 KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "WormGptkeys.txt")
 IP_USAGE_FILE = os.path.join(os.path.dirname(__file__), "..", "ip_usage.json")
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL = os.environ.get("OPENROUTER_URL")
 
 
 def load_ip_usage():
